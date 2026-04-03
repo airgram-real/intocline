@@ -121,7 +121,7 @@ class ChatImageGalleryItem: GalleryItem {
     let context: AccountContext
     let presentationData: PresentationData
     let message: Message
-    let mediaIndex: Int?
+    let mediaSubject: GalleryMediaSubject?
     let location: MessageHistoryEntryLocation?
     let translateToLanguage: String?
     let peerIsCopyProtected: Bool
@@ -129,13 +129,14 @@ class ChatImageGalleryItem: GalleryItem {
     let displayInfoOnTop: Bool
     let performAction: (GalleryControllerInteractionTapAction) -> Void
     let openActionOptions: (GalleryControllerInteractionTapAction, Message) -> Void
+    let sendSticker: ((FileMediaReference) -> Void)?
     let present: (ViewController, Any?) -> Void
     
-    init(context: AccountContext, presentationData: PresentationData, message: Message, mediaIndex: Int? = nil, location: MessageHistoryEntryLocation?, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, isSecret: Bool = false, displayInfoOnTop: Bool, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, present: @escaping (ViewController, Any?) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, message: Message, mediaSubject: GalleryMediaSubject? = nil, location: MessageHistoryEntryLocation?, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, isSecret: Bool = false, displayInfoOnTop: Bool, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, sendSticker: ((FileMediaReference) -> Void)?, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.message = message
-        self.mediaIndex = mediaIndex
+        self.mediaSubject = mediaSubject
         self.location = location
         self.translateToLanguage = translateToLanguage
         self.peerIsCopyProtected = peerIsCopyProtected
@@ -143,35 +144,19 @@ class ChatImageGalleryItem: GalleryItem {
         self.displayInfoOnTop = displayInfoOnTop
         self.performAction = performAction
         self.openActionOptions = openActionOptions
+        self.sendSticker = sendSticker
         self.present = present
     }
     
     func node(synchronous: Bool) -> GalleryItemNode {
-        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions, present: self.present)
+        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions, sendSticker: self.sendSticker, present: self.present)
         
-        node.setMessage(self.message, displayInfo: !self.displayInfoOnTop, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, isSecret: self.isSecret, location: self.location)
-        for media in self.message.media {
-            if let paidContent = media as? TelegramMediaPaidContent {
-                let mediaIndex = self.mediaIndex ?? 0
-                if case let .full(fullMedia) = paidContent.extendedMedia[Int(mediaIndex)], let image = fullMedia as? TelegramMediaImage {
-                    node.setImage(userLocation: .peer(self.message.id.peerId), imageReference: .message(message: MessageReference(self.message), media: image))
-                }
-            } else if let invoice = media as? TelegramMediaInvoice, let extendedMedia = invoice.extendedMedia, case let .full(fullMedia) = extendedMedia, let image = fullMedia as? TelegramMediaImage {
+        node.setMessage(self.message, mediaSubject: self.mediaSubject, displayInfo: !self.displayInfoOnTop, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, isSecret: self.isSecret, location: self.location)
+        if let (media, _) = selectedMediaAndMediaImageForMessage(message: self.message, mediaSubject: self.mediaSubject) {
+            if let image = media as? TelegramMediaImage {
                 node.setImage(userLocation: .peer(self.message.id.peerId), imageReference: .message(message: MessageReference(self.message), media: image))
-            } else if let image = media as? TelegramMediaImage {
-                node.setImage(userLocation: .peer(self.message.id.peerId), imageReference: .message(message: MessageReference(self.message), media: image))
-                break
             } else if let file = media as? TelegramMediaFile, file.mimeType.hasPrefix("image/") {
                 node.setFile(context: self.context, userLocation: .peer(self.message.id.peerId), fileReference: .message(message: MessageReference(self.message), media: file))
-                break
-            } else if let webpage = media as? TelegramMediaWebpage, case let .Loaded(content) = webpage.content {
-                if let image = content.image {
-                    node.setImage(userLocation: .peer(self.message.id.peerId), imageReference: .message(message: MessageReference(self.message), media: image))
-                    break
-                } else if let file = content.file, file.mimeType.hasPrefix("image/") {
-                    node.setFile(context: self.context, userLocation: .peer(self.message.id.peerId), fileReference: .message(message: MessageReference(self.message), media: file))
-                    break
-                }
             }
         }
         
@@ -180,18 +165,31 @@ class ChatImageGalleryItem: GalleryItem {
     
     func updateNode(node: GalleryItemNode, synchronous: Bool) {
         if let node = node as? ChatImageGalleryItemNode, let location = self.location {
-            node.setMessage(self.message, displayInfo: !self.displayInfoOnTop, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, isSecret: self.isSecret, location: location)
+            node.setMessage(self.message, mediaSubject: self.mediaSubject, displayInfo: !self.displayInfoOnTop, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, isSecret: self.isSecret, location: location)
         }
     }
     
     func thumbnailItem() -> (Int64, GalleryThumbnailItem)? {
         if let paidContent = self.message.paidContent {
             var mediaReference: AnyMediaReference?
-            let mediaIndex = self.mediaIndex ?? 0
+            var mediaIndex: Int = 0
+            if case let .paidMediaIndex(index) = self.mediaSubject {
+                mediaIndex = index
+            }
             if case let .full(fullMedia) = paidContent.extendedMedia[Int(mediaIndex)], let m = fullMedia as? TelegramMediaImage {
                 mediaReference = .message(message: MessageReference(self.message), media: m)
             }
-            if let mediaReference = mediaReference {
+            if let mediaReference {
+                if let item = ChatMediaGalleryThumbnailItem(account: self.context.account, userLocation: .peer(self.message.id.peerId), mediaReference: mediaReference) {
+                    return (0, item)
+                }
+            }
+        } else if let poll = self.message.media.first(where: { $0 is TelegramMediaPoll }) as? TelegramMediaPoll, case let .pollOption(opaqueIdentifier) = self.mediaSubject {
+            var mediaReference: AnyMediaReference?
+            if let optionMedia = poll.options.first(where: { $0.opaqueIdentifier == opaqueIdentifier })?.media as? TelegramMediaImage {
+                mediaReference = .message(message: MessageReference(self.message), media: optionMedia)
+            }
+            if let mediaReference {
                 if let item = ChatMediaGalleryThumbnailItem(account: self.context.account, userLocation: .peer(self.message.id.peerId), mediaReference: mediaReference) {
                     return (0, item)
                 }
@@ -205,7 +203,7 @@ class ChatImageGalleryItem: GalleryItem {
                     mediaReference = .message(message: MessageReference(self.message), media: m)
                 }
             }
-            if let mediaReference = mediaReference {
+            if let mediaReference {
                 if let item = ChatMediaGalleryThumbnailItem(account: self.context.account, userLocation: .peer(self.message.id.peerId), mediaReference: mediaReference) {
                     return (Int64(id), item)
                 }
@@ -218,11 +216,14 @@ class ChatImageGalleryItem: GalleryItem {
 final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let context: AccountContext
     private var message: Message?
+    private var mediaSubject: GalleryMediaSubject?
     private var displayInfo: Bool = false
     private var translateToLanguage: String?
     private var peerIsCopyProtected: Bool = false
     private var isSecret: Bool = false
     private let presentationData: PresentationData
+    
+    private var sendSticker: ((FileMediaReference) -> Void)?
     
     private let imageNode: TransformImageNode
     private var recognizedContentNode: RecognizedContentContainer?
@@ -266,9 +267,10 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         }
     }
     
-    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, present: @escaping (ViewController, Any?) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, sendSticker: ((FileMediaReference) -> Void)?, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
+        self.sendSticker = sendSticker
         
         self.imageNode = TransformImageNode()
         self.imageNode.contentAnimations = .subsequentUpdates
@@ -441,8 +443,9 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         }))
     }
     
-    fileprivate func setMessage(_ message: Message, displayInfo: Bool, translateToLanguage: String?, peerIsCopyProtected: Bool, isSecret: Bool, location: MessageHistoryEntryLocation?) {
+    fileprivate func setMessage(_ message: Message, mediaSubject: GalleryMediaSubject?, displayInfo: Bool, translateToLanguage: String?, peerIsCopyProtected: Bool, isSecret: Bool, location: MessageHistoryEntryLocation?) {
         self.message = message
+        self.mediaSubject = mediaSubject
         self.displayInfo = displayInfo
         self.translateToLanguage = translateToLanguage
         self.peerIsCopyProtected = peerIsCopyProtected
@@ -472,7 +475,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         guard let message = self.message else {
             return
         }
-        self.footerContentNode.setMessage(message, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
+        self.footerContentNode.setMessage(message, mediaSubject: self.mediaSubject, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
     }
     
     fileprivate func setImage(userLocation: MediaResourceUserLocation, imageReference: ImageMediaReference) {
@@ -708,7 +711,11 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                     if let self, let peer, let navigationController = self.baseNavigationController() {
                         self.beginCustomDismiss(.simpleAnimation)
                         
-                        context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil, setupReply: false)))
+                        var innerSubject: EngineMessageReplyInnerSubject?
+                        if let mediaSubject = self.mediaSubject, case let .pollOption(opaqueIdentifier) = mediaSubject {
+                            innerSubject = .pollOption(opaqueIdentifier)
+                        }
+                        context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil, subject: innerSubject), timecode: nil, setupReply: false)))
                         
                         Queue.mainQueue().after(0.3) {
                             self.completeCustomDismiss(false)
@@ -718,6 +725,34 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 })))
                 
                 if !message.isCopyProtected() && !self.peerIsCopyProtected && message.paidContent == nil, let media = self.contextAndMedia?.1 {
+                    items.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Gallery_CreateSticker, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Sticker"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] _, f in
+                        f(.default)
+                        guard let self else {
+                            return
+                        }
+                        let _ = (fetchMediaData(context: context, postbox: context.account.postbox, userLocation: .other, mediaReference: media)
+                        |> deliverOnMainQueue).start(next: { [weak self] (value, isImage) in
+                            guard let self, case let .data(data) = value, data.complete, isImage, let image = UIImage(contentsOfFile: data.path) else {
+                                return
+                            }
+                            let sendSticker = self.sendSticker
+                            let controller = context.sharedContext.makeStickerEditorScreen(context: context, source: image, mode: .generic(canSend: self.sendSticker != nil), transitionArguments: (self.imageNode.view, self.imageNode.bounds, self.imageNode.image), completion: { file, _, commit in
+                                sendSticker?(.standalone(media: file))
+                                commit()
+                            }, cancelled: {})
+                            guard let galleryController = self.galleryController() as? GalleryController, let navigationController = self.baseNavigationController() else {
+                                return
+                            }
+                            galleryController.willDismiss()
+                            (navigationController.topViewController as? ViewController)?.present(controller, in: .window(.root))
+                            (controller as? MediaEditorScreen)?.customNavigationController  = navigationController
+                            self.imageNode.isHidden = true
+                            Queue.mainQueue().after(0.5, {
+                                galleryController.dismiss()
+                            })
+                        })
+                    })))
+                    
                     items.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Gallery_SaveImage, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] _, f in
                         f(.default)
                         
@@ -740,7 +775,11 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                     if let self, let navigationController = self.baseNavigationController() {
                         self.beginCustomDismiss(.simpleAnimation)
                         
-                        context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil, setupReply: true)))
+                        var innerSubject: EngineMessageReplyInnerSubject?
+                        if let mediaSubject = self.mediaSubject, case let .pollOption(opaqueIdentifier) = mediaSubject {
+                            innerSubject = .pollOption(opaqueIdentifier)
+                        }
+                        context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil, subject: innerSubject), timecode: nil, setupReply: true)))
                         
                         Queue.mainQueue().after(0.3) {
                             self.completeCustomDismiss(false)
@@ -1178,7 +1217,6 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         guard let message = self.message else {
             return false
         }
-
         var canDelete = false
         if let peer = message.peers[message.id.peerId] {
             if peer is TelegramUser || peer is TelegramSecretChat {
@@ -1195,6 +1233,9 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 canDelete = false
             }
         } else {
+            canDelete = false
+        }
+        if let _ = message.media.first(where: { $0 is TelegramMediaPoll }) {
             canDelete = false
         }
         return canDelete

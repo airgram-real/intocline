@@ -56,12 +56,21 @@ private let expandableBlockMaskImage: UIImage = {
 }()
 
 private final class InteractiveTextNodeStrikethrough {
+    enum Style {
+        case single
+        case wavy
+    }
+
     let range: NSRange
     let frame: CGRect
-    
-    init(range: NSRange, frame: CGRect) {
+    let color: UIColor?
+    let style: Style
+
+    init(range: NSRange, frame: CGRect, color: UIColor? = nil, style: Style = .single) {
         self.range = range
         self.frame = frame
+        self.color = color
+        self.style = style
     }
 }
 
@@ -514,6 +523,18 @@ public final class InteractiveTextNodeLayout: NSObject {
     public var trailingLineIsRTL: Bool {
         if let lastSegment = self.segments.last, let lastLine = lastSegment.lines.last {
             return lastLine.isRTL
+        } else {
+            return false
+        }
+    }
+    
+    public var trailingLineIsBlock: Bool {
+        if let lastSegment = self.segments.last {
+            if let _ = lastSegment.blockQuote {
+                return true
+            } else {
+                return false
+            }
         } else {
             return false
         }
@@ -1019,28 +1040,73 @@ public final class InteractiveTextNodeLayout: NSObject {
         return nil
     }
     
-    public func sizeForGlyphCount(glyphCount: Int) -> CGSize {
+    public func layoutForGlyphCount(glyphCount: Int) -> TextNodeLayout.LayoutInfo {
         var height: CGFloat = 0.0
         if !self.segments.isEmpty, let line = self.segments[0].lines.first {
             height = line.frame.maxY
         }
+        var width: CGFloat = 0.0
         var count = 0
+        var trailingLineWidth: CGFloat = 0.0
         for segment in self.segments {
             for line in segment.lines {
                 if count >= glyphCount {
                     break
                 }
+                let lineWidth: CGFloat
                 let glyphRuns = CTLineGetGlyphRuns(line.line) as NSArray
+                var maxGlyphUpperIndex: CFIndex = 0
                 for run in glyphRuns {
                     let run = run as! CTRun
-                    let glyphCount = CTRunGetGlyphCount(run)
-                    count += Int(glyphCount)
+                    let rangeGlyphCount = CTRunGetGlyphCount(run)
+                    let stringRange = CTRunGetStringRange(run)
+                    if count + Int(rangeGlyphCount) > glyphCount {
+                        if count < glyphCount {
+                            let remainingGlyphCount = stringRange.location + glyphCount - count
+                            if remainingGlyphCount > 0 {
+                                var indices: [CFIndex] = Array(repeating: 0, count: remainingGlyphCount)
+                                CTRunGetStringIndices(run, CFRangeMake(stringRange.location, stringRange.location + glyphCount - count), &indices)
+                                if let maxIndex = indices.max() {
+                                    maxGlyphUpperIndex = max(maxIndex, maxGlyphUpperIndex)
+                                }
+                            } else {
+                                assertionFailure()
+                            }
+                        }
+                    } else {
+                        if stringRange.length != 0 {
+                            maxGlyphUpperIndex = max(stringRange.location + stringRange.length, maxGlyphUpperIndex)
+                        }
+                    }
+                    count += Int(rangeGlyphCount)
                 }
                 height = max(height, line.frame.maxY)
+                if maxGlyphUpperIndex != 0 {
+                    let lineRange = CTLineGetStringRange(line.line)
+                    if maxGlyphUpperIndex < lineRange.location + lineRange.length {
+                        let rightOffset = CTLineGetOffsetForStringIndex(line.line, maxGlyphUpperIndex + 1, nil)
+                        lineWidth = rightOffset
+                    } else {
+                        lineWidth = line.frame.width
+                    }
+                } else {
+                    lineWidth = line.frame.width
+                }
+                
+                width = max(width, lineWidth)
+                trailingLineWidth = lineWidth
             }
         }
+        let _ = width
         height += self.insets.top + self.insets.bottom + 2.0
-        return CGSize(width: self.size.width, height: ceil(height))
+        return TextNodeLayout.LayoutInfo(
+            size: CGSize(width: self.size.width, height: ceil(height)),
+            trailingLineWidth: trailingLineWidth
+        )
+    }
+    
+    public func sizeForGlyphCount(glyphCount: Int) -> CGSize {
+        return self.layoutForGlyphCount(glyphCount: glyphCount).size
     }
 }
 
@@ -1769,11 +1835,11 @@ open class InteractiveTextNode: ASDisplayNode, TextNodeProtocol, UIGestureRecogn
                             let upperX = ceil(CTLineGetOffsetForStringIndex(line.line, range.location + range.length, nil))
                             let x = lowerX < upperX ? lowerX : upperX
                             line.strikethroughs.append(InteractiveTextNodeStrikethrough(range: range, frame: CGRect(x: x, y: 0.0, width: abs(upperX - lowerX), height: line.frame.height)))
-                        } else if let _ = attributes[NSAttributedString.Key.underlineStyle] {
+                        } else if let underlineStyle = attributes[NSAttributedString.Key.underlineStyle] as? Int {
                             let lowerX = floor(CTLineGetOffsetForStringIndex(line.line, range.location, nil))
                             let upperX = ceil(CTLineGetOffsetForStringIndex(line.line, range.location + range.length, nil))
                             let x = lowerX < upperX ? lowerX : upperX
-                            line.underlines.append(InteractiveTextNodeStrikethrough(range: range, frame: CGRect(x: x, y: 0.0, width: abs(upperX - lowerX), height: line.frame.height)))
+                            line.underlines.append(InteractiveTextNodeStrikethrough(range: range, frame: CGRect(x: x, y: 0.0, width: abs(upperX - lowerX), height: line.frame.height), color: attributes[NSAttributedString.Key.underlineColor] as? UIColor, style: underlineStyle == NSUnderlineStyle.patternDot.rawValue ? .wavy : .single))
                         }
                         
                         if let embeddedItem = (attributes[NSAttributedString.Key(rawValue: "TelegramEmbeddedItem")] as? AnyHashable ?? attributes[NSAttributedString.Key(rawValue: "Attribute__EmbeddedItem")] as? AnyHashable) {
@@ -2473,11 +2539,46 @@ final class TextContentItemLayer: SimpleLayer {
                                         textColor = color
                                     }
                                 }
-                                if let textColor = textColor {
-                                    context.setFillColor(textColor.cgColor)
+                                switch strikethrough.style {
+                                case .single:
+                                    if let color = strikethrough.color {
+                                        context.setFillColor(color.cgColor)
+                                    } else if let textColor {
+                                        context.setFillColor(textColor.cgColor)
+                                    }
+                                    let frame = strikethrough.frame.offsetBy(dx: lineFrame.minX, dy: lineFrame.minY)
+                                    context.fill(CGRect(x: frame.minX, y: frame.maxY - 2.0, width: frame.width, height: 1.0))
+                                case .wavy:
+                                    if let color = strikethrough.color {
+                                        context.setStrokeColor(color.cgColor)
+                                    } else if let textColor {
+                                        context.setStrokeColor(textColor.cgColor)
+                                    }
+                                    context.setLineWidth(1.33)
+                                    context.setLineCap(.round)
+                                    context.setLineJoin(.round)
+                                    let frame = strikethrough.frame.offsetBy(dx: lineFrame.minX, dy: lineFrame.maxY + 12.0)
+
+                                    let amplitude: CGFloat = 1.2
+                                    let period: CGFloat = 8.0
+                                    let phase: CGFloat = -0.5
+                                    let midY = frame.midY
+                                    let step: CGFloat = 1.0
+
+                                    context.saveGState()
+                                    context.clip(to: frame)
+
+                                    var x = frame.minX
+                                    context.move(to: CGPoint(x: x, y: midY + amplitude * sin(phase)))
+                                    x += step
+                                    while x <= frame.maxX + step {
+                                        let y = midY + amplitude * sin((x - frame.minX) * 2.0 * .pi / period + phase)
+                                        context.addLine(to: CGPoint(x: x, y: y))
+                                        x += step
+                                    }
+                                    context.strokePath()
+                                    context.restoreGState()
                                 }
-                                let frame = strikethrough.frame.offsetBy(dx: lineFrame.minX, dy: lineFrame.minY)
-                                context.fill(CGRect(x: frame.minX, y: frame.maxY - 2.0, width: frame.width, height: 1.0))
                             }
                         }
                     }

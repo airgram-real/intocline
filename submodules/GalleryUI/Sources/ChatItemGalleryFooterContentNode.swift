@@ -37,6 +37,7 @@ import ComponentDisplayAdapters
 import EdgeEffect
 import RasterizedCompositionComponent
 import BadgeComponent
+import UIKitRuntimeUtils
 
 private let deleteImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionTrash"), color: .white)
 private let actionImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
@@ -171,6 +172,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
     
     private var currentMessage: Message?
     private var currentWebPageAndMedia: (TelegramMediaWebpage, Media)?
+    private var mediaSubject: GalleryMediaSubject?
     private let messageContextDisposable = MetaDisposable()
     
     private var videoFramePreviewNode: (ASImageNode, ImmediateTextNode)?
@@ -458,18 +460,18 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         )
         self.textNode.visibility = true
         
-        let textSelectionNode = TextSelectionNode(theme: TextSelectionTheme(selection: defaultDarkPresentationTheme.list.itemAccentColor.withMultipliedAlpha(0.5), knob: defaultDarkPresentationTheme.list.itemAccentColor, isDark: true), strings: presentationData.strings, textNode: self.textNode, updateIsActive: { [weak self] value in
+        let textSelectionNode = TextSelectionNode(theme: TextSelectionTheme(selection: defaultDarkPresentationTheme.list.itemAccentColor.withMultipliedAlpha(0.5), knob: defaultDarkPresentationTheme.list.itemAccentColor, isDark: true), strings: presentationData.strings, textNodeOrView: .node(self.textNode), updateIsActive: { [weak self] value in
             guard let self else {
                 return
             }
             let _ = self
         }, present: { c, a in
             present(c, a)
-        }, rootNode: { [weak self] in
+        }, rootView: { [weak self] in
             guard let self else {
                 return nil
             }
-            return self.controllerInteraction?.controller()?.displayNode
+            return self.controllerInteraction?.controller()?.displayNode.view
         }, externalKnobSurface: self.textSelectionKnobSurface, performAction: { [weak self] text, action in
             guard let self else {
                 return
@@ -833,8 +835,9 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         }
     }
     
-    func setMessage(_ message: Message, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
+    func setMessage(_ message: Message, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
         self.currentMessage = message
+        self.mediaSubject = mediaSubject
         
         var displayInfo = displayInfo
         if Namespaces.Message.allNonRegular.contains(message.id.namespace) || message.timestamp == 0 {
@@ -936,6 +939,10 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             canFullscreen = false
         }
         
+        if message.media.contains(where: { $0 is TelegramMediaPoll }) {
+            canDelete = false
+        }
+        
         var authorNameText: String?
         if let forwardInfo = message.forwardInfo, forwardInfo.flags.contains(.isImported), let authorSignature = forwardInfo.authorSignature {
             authorNameText = authorSignature
@@ -953,6 +960,8 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                 hasCaption = true
             } else if media is TelegramMediaImage {
                 hasCaption = true
+            } else if media is TelegramMediaPoll {
+                hasCaption = true
             } else if let file = media as? TelegramMediaFile {
                 hasCaption = file.mimeType.hasPrefix("image/") || file.mimeType.hasPrefix("video/")
                 mediaDuration = file.duration
@@ -961,18 +970,11 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             }
         }
         if hasCaption {
-            var entities: [MessageTextEntity] = []
-            for attribute in message.attributes {
-                if let attribute = attribute as? TextEntitiesMessageAttribute {
-                    entities = attribute.entities
-                    break
-                }
-            }
-            var text = message.text
+            var (text, entities) = galleryMessageCaptionText(message, mediaSubject: mediaSubject)
             if let result = addLocallyGeneratedEntities(text, enabledTypes: [.timecode], entities: entities, mediaDuration: mediaDuration) {
                 entities = result
             }
-            if let translateToLanguage, !text.isEmpty {
+            if let translateToLanguage, mediaSubject == nil && !text.isEmpty {
                 for attribute in message.attributes {
                     if let attribute = attribute as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
                         text = attribute.text
@@ -1340,13 +1342,14 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                         isOpen: false
                     ))),
                     action: { [weak self] in
-                        guard let self, let buttonPanelView = self.buttonPanel.view as? GlassControlPanelComponent.View, let centerItemView = buttonPanelView.centerItemView else {
+                        guard let self, let buttonPanelView = self.buttonPanel.view as? GlassControlPanelComponent.View else {
                             return
                         }
-                        guard let itemView = centerItemView.itemView(id: AnyHashable("settings")) else {
-                            return
+                        if let centerItemView = buttonPanelView.centerItemView, let itemView = centerItemView.itemView(id: AnyHashable("settings")) {
+                            self.settingsButtonPressed(sourceView: itemView)
+                        } else if let rightItemView = buttonPanelView.rightItemView, let itemView = rightItemView.itemView(id: AnyHashable("settings")) {
+                            self.settingsButtonPressed(sourceView: itemView)
                         }
-                        self.settingsButtonPressed(sourceView: itemView)
                     }
                 ))
             }
@@ -1505,7 +1508,9 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                 transition.animatePositionAdditive(layer: scrubberView.layer, offset: CGPoint(x: 0.0, y: self.bounds.height - fromHeight))
             }
             scrubberView.alpha = 1.0
-            scrubberView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
+            if transition.isAnimated {
+                scrubberView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
+            }
         }
         transition.animatePositionAdditive(node: self.scrollWrapperNode, offset: CGPoint(x: 0.0, y: self.bounds.height - fromHeight))
         self.scrollNode.alpha = 0.0
@@ -1719,7 +1724,25 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                     var messageContentKinds = Set<MessageContentKindKey>()
                     
                     for message in messages {
-                        let currentKind = messageContentKind(contentSettings: strongSelf.context.currentContentSettings.with { $0 }, message: message, strings: presentationData.strings, nameDisplayOrder: presentationData.nameDisplayOrder, dateTimeFormat: presentationData.dateTimeFormat, accountPeerId: strongSelf.context.account.peerId)
+                        var currentKind = messageContentKind(contentSettings: strongSelf.context.currentContentSettings.with { $0 }, message: message, strings: presentationData.strings, nameDisplayOrder: presentationData.nameDisplayOrder, dateTimeFormat: presentationData.dateTimeFormat, accountPeerId: strongSelf.context.account.peerId)
+                        if case .poll = currentKind, let poll = message.media.first(where: { $0 is TelegramMediaPoll }) as? TelegramMediaPoll {
+                            var media: Media?
+                            switch strongSelf.mediaSubject {
+                            case .pollDescription:
+                                media = poll.attachedMedia
+                            case .pollSolution:
+                                media = poll.results.solution?.media
+                            case let .pollOption(opaqueIdentifier):
+                                if let option = poll.options.first(where: { $0.opaqueIdentifier == opaqueIdentifier }) {
+                                    media = option.media
+                                }
+                            default:
+                                break
+                            }
+                            if let media, let kind = mediaContentKind(EngineMedia(media)) {
+                                currentKind = kind
+                            }
+                        }
                         if beganContentKindScanning, let messageContentKind = generalMessageContentKind, !messageContentKind.isSemanticallyEqual(to: currentKind) {
                             generalMessageContentKind = nil
                         } else if !beganContentKindScanning || currentKind == generalMessageContentKind {
@@ -1754,8 +1777,25 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                     
                     if messages.count == 1 {
                         var subject: ShareControllerSubject = ShareControllerSubject.messages(messages.map { $0._asMessage() })
-                        for m in messages[0].media {
-                            if let image = m as? TelegramMediaImage {
+                        
+                        var media = messages[0].media.first
+                        if let poll = media as? TelegramMediaPoll {
+                            switch strongSelf.mediaSubject {
+                            case .pollDescription:
+                                media = poll.attachedMedia
+                            case .pollSolution:
+                                media = poll.results.solution?.media
+                            case let .pollOption(opaqueIdentifier):
+                                if let option = poll.options.first(where: { $0.opaqueIdentifier == opaqueIdentifier }) {
+                                    media = option.media
+                                }
+                            default:
+                                break
+                            }
+                        }
+                        
+                        if let m = media {
+                            if let image = media as? TelegramMediaImage {
                                 subject = .image(image.representations.map({ ImageRepresentationWithReference(representation: $0, reference: .media(media: .message(message: MessageReference(messages[0]._asMessage()), media: m), resource: $0.resource)) }))
                             } else if let webpage = m as? TelegramMediaWebpage, case let .Loaded(content) = webpage.content {
                                 if content.embedType == "iframe" {
@@ -2214,7 +2254,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         }
     }
     
-    func setFramePreviewImage(image: UIImage?) {
+    func setFramePreviewImage(image: UIImage?, isSecret: Bool) {
         if let image = image {
             let videoFramePreviewNode: ASImageNode
             let videoFrameTextNode: ImmediateTextNode
@@ -2251,6 +2291,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             videoFramePreviewNode.subnodes?.first?.alpha = 0.0
             let updateLayout = videoFramePreviewNode.image?.size != image.size
             videoFramePreviewNode.image = image
+            setLayerDisableScreenshots(videoFramePreviewNode.layer, isSecret)
             if updateLayout, let validLayout = self.validLayout {
                 let _ = self.updateLayout(size: validLayout.0, metrics: validLayout.1, leftInset: validLayout.2, rightInset: validLayout.3, bottomInset: validLayout.4, contentInset: validLayout.5, transition: .immediate)
             }

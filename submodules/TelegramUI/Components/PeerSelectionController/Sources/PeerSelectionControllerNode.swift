@@ -102,6 +102,8 @@ final class PeerSelectionControllerNode: ASDisplayNode {
     
     private var countPanelNode: PeersCountPanelNode?
     
+    weak var pushedController: ViewController?
+    
     private var readyValue = Promise<Bool>()
     var ready: Signal<Bool, NoError> {
         return self.readyValue.get()
@@ -286,10 +288,12 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                         return
                     }
                     self.chatListNode?.clearHighlightAnimated(true)
+                    self.mainContainerNode?.currentItemNode.clearHighlightAnimated(true)
                     self.requestOpenPeer?(mainPeer, peer.id.toInt64())
                 })
             } else {
                 self.chatListNode?.clearHighlightAnimated(true)
+                self.mainContainerNode?.currentItemNode.clearHighlightAnimated(true)
                 self.requestOpenPeer?(peer, threadId)
             }
         }
@@ -348,6 +352,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                 replaceImpl = { [weak controller] c in
                     controller?.replace(with: c)
                 }
+                strongSelf.pushedController = controller
                 strongSelf.controller?.push(controller)
             }
             self.addSubnode(mainContainerNode)
@@ -488,7 +493,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     if canHideNames {
                         items.append(.action(ContextMenuActionItem(text: uniquePeerIds.count == 1 ? presentationData.strings.Conversation_ForwardOptions_ShowSendersName : presentationData.strings.Conversation_ForwardOptions_ShowSendersNames, icon: { theme in
                             if hideNames {
-                                return nil
+                                return UIImage()
                             } else {
                                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
                             }
@@ -506,7 +511,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                             if hideNames {
                                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
                             } else {
-                                return nil
+                                return UIImage()
                             }
                         }, action: { _, f in
                             self?.interfaceInteraction?.updateForwardOptionsState({ current in
@@ -523,7 +528,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     if hasCaptions {
                         items.append(.action(ContextMenuActionItem(text: presentationData.strings.Conversation_ForwardOptions_ShowCaption, icon: { theme in
                             if hideCaptions {
-                                return nil
+                                return UIImage()
                             } else {
                                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
                             }
@@ -543,7 +548,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                             if hideCaptions {
                                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
                             } else {
-                                return nil
+                                return UIImage()
                             }
                         }, action: { _, f in
                             self?.interfaceInteraction?.updateForwardOptionsState({ current in
@@ -648,6 +653,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         }, setupMessageAutoremoveTimeout: {
         }, sendSticker: { _, _, _, _, _, _ in
             return false
+        }, editSticker: { _ in
         }, unblockPeer: {
         }, pinMessage: { _, _ in
         }, unpinMessage: { _, _, _ in
@@ -717,6 +723,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                 })
                 strongSelf.present(controller, nil)
             }
+        }, openDateEditing: {   
         }, displaySlowmodeTooltip: { _, _ in
         }, displaySendMessageOptions: { [weak self] node, gesture in
             guard let strongSelf = self else {
@@ -758,7 +765,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     )),
                     hasEntityKeyboard: hasEntityKeyboard,
                     gesture: gesture,
-                    sourceSendButton: node,
+                    sourceSendButton: node.view,
                     textInputView: textInputNode.textView,
                     emojiViewProvider: textInputPanelNode.emojiViewProvider,
                     completion: {
@@ -826,7 +833,10 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         }, dismissForwardMessages: {
         }, dismissSuggestPost: {
         }, displayUndo: { _ in
+        }, presentInputTextTranslation: { _, _ in
         }, sendEmoji: { _, _, _ in
+        }, openAICompose: {
+        }, openSetPeerAvatar: {
         }, updateHistoryFilter: { _ in
         }, updateChatLocationThread: { _, _ in
         }, toggleChatSidebarMode: {
@@ -838,6 +848,18 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         
         if let chatListNode = self.chatListNode {
             self.readyValue.set(chatListNode.ready)
+        }
+    }
+    
+    override func didLoad() {
+        super.didLoad()
+        
+        if let controller = self.controller, controller.immediatelySwitchToContacts {
+            self.segmentedControlSelectedIndex = 1
+            if let (layout, navigationBarHeight, actualNavigationBarHeight) = self.containerLayout {
+                self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, actualNavigationBarHeight: actualNavigationBarHeight, transition: .animated(duration: 0.4, curve: .spring))
+            }
+            self.indexChanged(1)
         }
     }
     
@@ -1190,6 +1212,10 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                         emptyText = ""
                     }
                     emptyButtonText = self.presentationData.strings.RequestPeer_CreateNewGroup
+                case .createBot:
+                    emptyTitle = ""
+                    emptyText = ""
+                    emptyButtonText = ""
                 }
                 
                 self.emptyTitleNode.attributedText = NSAttributedString(string: emptyTitle, font: Font.semibold(15.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
@@ -1843,6 +1869,8 @@ private func stringForRequestPeerType(strings: PresentationStrings, peerType: Re
                 append(rightsString)
             }
         }
+    case .createBot:
+        break
     }
     if lines.isEmpty {
         return nil

@@ -68,6 +68,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     private let requestPeerType: [ReplyMarkupButtonRequestPeerType]?
     let multipleSelectionLimit: Int32?
     private let hasCreation: Bool
+    let immediatelySwitchToContacts: Bool
     let immediatelyActivateMultipleSelection: Bool
     
     override public var _presentedInModal: Bool {
@@ -110,6 +111,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
         self.selectForumThreads = params.selectForumThreads
         self.requestPeerType = params.requestPeerType
         self.hasCreation = params.hasCreation
+        self.immediatelySwitchToContacts = params.immediatelySwitchToContacts
         self.immediatelyActivateMultipleSelection = params.immediatelyActivateMultipleSelection
         self.multipleSelectionLimit = params.multipleSelectionLimit
         
@@ -134,6 +136,8 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                     self.customTitle = self.presentationData.strings.RequestPeer_ChooseGroupTitle
                 case .channel:
                     self.customTitle = self.presentationData.strings.RequestPeer_ChooseChannelTitle
+                case .createBot:
+                    break
                 }
             } else {
                 self.customTitle = self.presentationData.strings.ChatImport_Title
@@ -228,6 +232,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                     replaceImpl = { [weak controller] c in
                         controller?.replace(with: c)
                     }
+                    strongSelf.peerSelectionNode.pushedController = controller
                     strongSelf.push(controller)
                 } else {
                     strongSelf.selectTab(id: id)
@@ -306,7 +311,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                         return
                     }
                     
-                    if mainChannel.hasPermission(.manageDirect) {
+                    if !mainChannel.isMonoForum || mainChannel.hasPermission(.manageDirect) {
                         let displayPeer = EnginePeer(mainChannel)
                         
                         let controller = PeerSelectionControllerImpl(
@@ -330,6 +335,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                             )
                         )
                         controller.peerSelected = self.peerSelected
+                        self.peerSelectionNode.pushedController = controller
                         self.push(controller)
                     } else {
                         peerSelected(.channel(peer), threadId)
@@ -373,6 +379,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                                 )
                             )
                             controller.peerSelected = strongSelf.peerSelected
+                            strongSelf.peerSelectionNode.pushedController = controller
                             strongSelf.push(controller)
                         } else {
                             peerSelected(peer, threadId)
@@ -625,5 +632,17 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                 strongSelf.peerSelectionNode.mainContainerNode?.switchToFilter(id: updatedFilter.flatMap { .filter($0.id) } ?? .all)
             }
         })
+    }
+    
+    override public func dismiss(completion: (() -> Void)? = nil) {
+        guard let navigationController = self.navigationController as? NavigationController else {
+            return
+        }
+        var viewControllers = navigationController.viewControllers
+        viewControllers.removeAll(where: { $0 === self })
+        if let pushedController = self.peerSelectionNode.pushedController {
+            viewControllers.removeAll(where: { $0 === pushedController })
+        }
+        navigationController.setViewControllers(viewControllers, animated: true)
     }
 }

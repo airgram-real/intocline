@@ -129,7 +129,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
         return true
     }
     
-    if let mediaData = chatMessageGalleryControllerData(context: params.context, chatLocation: params.chatLocation, chatFilterTag: params.chatFilterTag, chatLocationContextHolder: params.chatLocationContextHolder, message: params.message, mediaIndex: params.mediaIndex, navigationController: params.navigationController, standalone: params.standalone, reverseMessageGalleryOrder: params.reverseMessageGalleryOrder, mode: params.mode, source: params.gallerySource, synchronousLoad: false, actionInteraction: params.actionInteraction) {
+    if let mediaData = chatMessageGalleryControllerData(context: params.context, chatLocation: params.chatLocation, chatFilterTag: params.chatFilterTag, chatLocationContextHolder: params.chatLocationContextHolder, message: params.message, mediaSubject: params.mediaSubject, navigationController: params.navigationController, standalone: params.standalone, reverseMessageGalleryOrder: params.reverseMessageGalleryOrder, mode: params.mode, source: params.gallerySource, synchronousLoad: false, actionInteraction: params.actionInteraction) {
         switch mediaData {
             case let .url(url):
                 params.openUrl(url)
@@ -237,7 +237,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                     params.present(controller, nil, .window(.root))
                 } else if let rootController = params.navigationController?.view.window?.rootViewController {
                     let proceed = {
-                        let canShare = !params.message.isCopyProtected()
+                        let canShare = !params.message.isCopyProtected() && !params.copyProtected
                         var useBrowserScreen = false
                         if BrowserScreen.supportedDocumentMimeTypes.contains(file.mimeType) {
                             useBrowserScreen = true
