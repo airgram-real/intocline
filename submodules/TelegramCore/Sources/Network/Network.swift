@@ -463,6 +463,21 @@ public struct NetworkInitializationArguments {
 private let cloudDataContext = Atomic<CloudDataContext?>(value: nil)
 #endif
 
+private let myTelegramServerHost = "5.231.230.141"
+private let myTelegramServerPort: UInt16 = 20443
+
+private func myTelegramDatacenterAddress() -> MTDatacenterAddress {
+    return MTDatacenterAddress(ip: myTelegramServerHost, port: myTelegramServerPort, preferForMedia: false, restrictToTcp: false, cdn: false, preferForProxy: false, secret: nil)
+}
+
+private func myTelegramDatacenterIds(testingEnvironment: Bool) -> [Int] {
+    if testingEnvironment {
+        return [1, 2, 3]
+    } else {
+        return [1, 2, 3, 4, 5]
+    }
+}
+
 func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, useRequestTimeoutTimers: Bool, appConfiguration: AppConfiguration) -> Signal<Network, NoError> {
     return Signal { subscriber in
         let queue = Queue()
@@ -485,6 +500,14 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             
             apiEnvironment = apiEnvironment.withUpdatedNetworkSettings((networkSettings ?? NetworkSettings.defaultSettings).mtNetworkSettings)
             apiEnvironment.accessHostOverride = networkSettings?.backupHostOverride
+            
+            let datacenterIds = myTelegramDatacenterIds(testingEnvironment: testingEnvironment)
+            var datacenterAddressOverrides: [NSNumber: MTDatacenterAddress] = [:]
+            let serverAddress = myTelegramDatacenterAddress()
+            for id in datacenterIds {
+                datacenterAddressOverrides[NSNumber(value: id)] = serverAddress
+            }
+            apiEnvironment.datacenterAddressOverrides = datacenterAddressOverrides
             
             var appDataUpdatedImpl: ((Data?) -> Void)?
             let syncValue = Atomic<Data?>(value: nil)
@@ -526,29 +549,14 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 }
             }
             
-            let seedAddressList: [Int: [String]]
-            
-            if testingEnvironment {
-                seedAddressList = [
-                    1: ["192.168.1.100"],
-                    2: ["192.168.1.100"],
-                    3: ["192.168.1.100"]
-                ]
-            } else {
-                seedAddressList = [
-                    1: ["192.168.1.100"],
-                    2: ["192.168.1.100"],
-                    3: ["192.168.1.100"],
-                    4: ["192.168.1.100"],
-                    5: ["192.168.1.100"]
-                ]
-            }
-            
-            for (id, ips) in seedAddressList {
-                context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: MTDatacenterAddressSet(addressList: ips.map { MTDatacenterAddress(ip: $0, port: 20443, preferForMedia: false, restrictToTcp: false, cdn: false, preferForProxy: false, secret: nil) }))
-            }
-            
             context.keychain = keychain
+            
+            let addressSet = MTDatacenterAddressSet(addressList: [serverAddress])
+            for id in datacenterIds {
+                context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
+                context.updateAddressSetForDatacenter(withId: id, addressSet: addressSet, forceUpdateSchemes: true)
+            }
+            
             // var wrappedAdditionalSource: MTSignal?
             #if os(iOS)
             if #available(iOS 10.0, *), !supplementary, arguments.isICloudEnabled {
@@ -604,7 +612,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             
             let mtProto = MTProto(context: context, datacenterId: datacenterId, usageCalculationInfo: usageCalculationInfo(basePath: basePath, category: nil), requiredAuthToken: nil, authTokenMasterDatacenterId: 0)!
             mtProto.useTempAuthKeys = context.useTempAuthKeys
-            mtProto.checkForProxyConnectionIssues = true
+            mtProto.checkForProxyConnectionIssues = false
             
             let connectionStatus = Promise<ConnectionStatus>(.waitingForNetwork)
             
