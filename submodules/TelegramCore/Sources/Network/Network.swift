@@ -526,7 +526,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 }
             }
             
-            let useTempAuthKeys: Bool = true
+            let useTempAuthKeys: Bool = false
             
             let context = MTContext(serialization: serialization, encryptionProvider: arguments.encryptionProvider, apiEnvironment: apiEnvironment, isTestingEnvironment: testingEnvironment, useTempAuthKeys: useTempAuthKeys)
             
@@ -552,9 +552,19 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             context.keychain = keychain
             
             let addressSet = MTDatacenterAddressSet(addressList: [serverAddress])!
-            for id in datacenterIds {
-                context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
-                context.updateAddressSetForDatacenter(withId: id, addressSet: addressSet, forceUpdateSchemes: true)
+            let resetAllAuthKeys = phoneNumber == nil
+            context.performBatchUpdates {
+                for id in datacenterIds {
+                    context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
+                    context.updateAddressSetForDatacenter(withId: id, addressSet: addressSet, forceUpdateSchemes: true)
+                    context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMain)
+                    context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMedia)
+                    if resetAllAuthKeys {
+                        context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .persistent)
+                    }
+                }
+                context.invalidateTransportSchemesForDatacenterIds(datacenterIds.map { NSNumber(value: $0) })
+                context.removeAllAuthTokens()
             }
             
             // var wrappedAdditionalSource: MTSignal?
@@ -613,6 +623,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             let mtProto = MTProto(context: context, datacenterId: datacenterId, usageCalculationInfo: usageCalculationInfo(basePath: basePath, category: nil), requiredAuthToken: nil, authTokenMasterDatacenterId: 0)!
             mtProto.useTempAuthKeys = context.useTempAuthKeys
             mtProto.checkForProxyConnectionIssues = false
+            mtProto.canResetAuthData = resetAllAuthKeys
             
             let connectionStatus = Promise<ConnectionStatus>(.waitingForNetwork)
             
