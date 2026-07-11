@@ -538,7 +538,9 @@ func initialStateWithPeerIds(_ transaction: Transaction, peerIds: Set<PeerId>, a
         }
     }
     
-    let state = AccountMutableState(initialState: AccountInitialState(state: (transaction.getState() as? AuthorizedAccountState)!.state!, peerIds: peerIds, peerIdsRequiringLocalChatState: peerIdsRequiringLocalChatState, channelStates: channelStates, peerChatInfos: peerChatInfos, locallyGeneratedMessageTimestamps: locallyGeneratedMessageTimestamps, cloudReadStates: cloudReadStates, channelsToPollExplicitely: channelsToPollExplicitely), initialPeers: peers, initialReferencedReplyMessageIds: referencedReplyMessageIds, initialReferencedGeneralMessageIds: referencedGeneralMessageIds, initialStoredMessages: storedMessages, initialStoredStories: storedStories, initialReadInboxMaxIds: readInboxMaxIds, storedMessagesByPeerIdAndTimestamp: storedMessagesByPeerIdAndTimestamp, initialSentScheduledMessageIds: Set())
+    let innerState = (transaction.getState() as? AuthorizedAccountState)?.state
+        ?? AuthorizedAccountState.State(pts: 0, qts: 0, date: 0, seq: 0)
+    let state = AccountMutableState(initialState: AccountInitialState(state: innerState, peerIds: peerIds, peerIdsRequiringLocalChatState: peerIdsRequiringLocalChatState, channelStates: channelStates, peerChatInfos: peerChatInfos, locallyGeneratedMessageTimestamps: locallyGeneratedMessageTimestamps, cloudReadStates: cloudReadStates, channelsToPollExplicitely: channelsToPollExplicitely), initialPeers: peers, initialReferencedReplyMessageIds: referencedReplyMessageIds, initialReferencedGeneralMessageIds: referencedGeneralMessageIds, initialStoredMessages: storedMessages, initialStoredStories: storedStories, initialReadInboxMaxIds: readInboxMaxIds, storedMessagesByPeerIdAndTimestamp: storedMessagesByPeerIdAndTimestamp, initialSentScheduledMessageIds: Set())
     return state
 }
 
@@ -4754,7 +4756,9 @@ func replayFinalState(
                     }
                 }
             case let .UpdateState(innerState):
-                let currentState = transaction.getState() as! AuthorizedAccountState
+                guard let currentState = transaction.getState() as? AuthorizedAccountState else {
+                    break
+                }
                 var updatedInnerState = innerState
                 if ignoreDate, let previousInnerState = currentState.state {
                     updatedInnerState = AuthorizedAccountState.State(pts: updatedInnerState.pts, qts: updatedInnerState.qts, date: previousInnerState.date, seq: updatedInnerState.seq)
