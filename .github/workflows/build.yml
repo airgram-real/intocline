@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-26
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
           fetch-depth: '0'
@@ -24,20 +24,10 @@ jobs:
           XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["xcode"]);')
           sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
 
-      - name: Restore Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            /private/var/tmp/_bazel_containerhost
-            /Users/Shared/bazel-disk-cache
-          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json', 'MODULE.bazel.lock') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-
-
       - name: Create canonical source directory
         run: |
           set -x
-          sudo mkdir -p /Users/Shared /Users/Shared/bazel-disk-cache
+          sudo mkdir -p /Users/Shared
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
@@ -45,7 +35,10 @@ jobs:
         run: |
           set -x
 
+          # source code paths are included in the final binary, so we need to make them stable across builds
           SOURCE_DIR=/Users/Shared/telegram-ios
+
+          # use canonical bazel root
           BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
 
           cd $SOURCE_DIR
@@ -65,11 +58,10 @@ jobs:
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
 
+          # Make.py collects Telegram.ipa and Telegram.DSYMs.zip into OUTPUT_PATH
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
-            --cacheDir="/Users/Shared/bazel-disk-cache" \
             --overrideXcodeVersion \
-            --enableParallelSwiftmoduleGeneration \
             build \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
