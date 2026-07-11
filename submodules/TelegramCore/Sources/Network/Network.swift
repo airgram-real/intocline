@@ -551,7 +551,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             
             context.keychain = keychain
             
-            let addressSet = MTDatacenterAddressSet(addressList: [serverAddress])
+            let addressSet = MTDatacenterAddressSet(addressList: [serverAddress])!
             for id in datacenterIds {
                 context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
                 context.updateAddressSetForDatacenter(withId: id, addressSet: addressSet, forceUpdateSchemes: true)
