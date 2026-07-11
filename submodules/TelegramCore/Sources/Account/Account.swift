@@ -202,7 +202,7 @@ public class UnauthorizedAccount {
             }
             for id in datacenterIds {
                 if network.context.authInfoForDatacenter(withId: id, selector: .persistent) == nil {
-                    network.context.authInfoForDatacenter(withIdRequired: id, isCdn: false, selector: .ephemeralMain, allowUnboundEphemeralKeys: false)
+                    network.context.authInfoForDatacenter(withIdRequired: id, isCdn: false, selector: .ephemeralMain, allowUnboundEphemeralKeys: true)
                 }
             }
         })

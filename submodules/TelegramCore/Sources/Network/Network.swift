@@ -554,8 +554,12 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 for id in datacenterIds {
                     context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
                     context.updateAddressSetForDatacenter(withId: id, addressSet: addressSet, forceUpdateSchemes: true)
-                    context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMain)
-                    context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMedia)
+                    // Keep ephemeral keys when reloading an authorized account; wiping them
+                    // forces a parallel handshake right after signIn/signUp and can crash the app.
+                    if resetAllAuthKeys {
+                        context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMain)
+                        context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .ephemeralMedia)
+                    }
                     if resetAllAuthKeys {
                         context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .persistent)
                     }
@@ -620,6 +624,8 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             let mtProto = MTProto(context: context, datacenterId: datacenterId, usageCalculationInfo: usageCalculationInfo(basePath: basePath, category: nil), requiredAuthToken: nil, authTokenMasterDatacenterId: 0)!
             mtProto.useTempAuthKeys = context.useTempAuthKeys
             mtProto.checkForProxyConnectionIssues = false
+            // Single-DC fork: skip bindTempAuthKey; server inherits user by client IP.
+            mtProto.allowUnboundEphemeralKeys = true
             // Auth keys are cleared once above; leaving canResetAuthData=true would
             // re-trigger handshake on every transport connect and block encrypted RPC.
             mtProto.canResetAuthData = false

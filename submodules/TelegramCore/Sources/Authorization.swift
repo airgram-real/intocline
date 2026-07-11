@@ -1101,6 +1101,7 @@ public func authorizeWithCode(accountManager: AccountManager<TelegramAccountMana
                                             isSupportUser = true
                                         }
                                         let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
+                                        transaction.updatePeersInternal([user], update: { _, updated in updated })
                                         initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
                                         transaction.setState(state)
                                         if let otherwiseReloginDays = otherwiseReloginDays, let value = forcedPasswordSetupNotice(otherwiseReloginDays) {
