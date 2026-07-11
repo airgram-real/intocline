@@ -471,11 +471,8 @@ private func myTelegramDatacenterAddress() -> MTDatacenterAddress {
 }
 
 private func myTelegramDatacenterIds(testingEnvironment: Bool) -> [Int] {
-    if testingEnvironment {
-        return [1, 2, 3]
-    } else {
-        return [1, 2, 3, 4, 5]
-    }
+    // Single-DC fork: all traffic goes to DC1; avoid parallel handshakes to the same host.
+    return [1]
 }
 
 func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, useRequestTimeoutTimers: Bool, appConfiguration: AppConfiguration) -> Signal<Network, NoError> {
@@ -623,7 +620,9 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             let mtProto = MTProto(context: context, datacenterId: datacenterId, usageCalculationInfo: usageCalculationInfo(basePath: basePath, category: nil), requiredAuthToken: nil, authTokenMasterDatacenterId: 0)!
             mtProto.useTempAuthKeys = context.useTempAuthKeys
             mtProto.checkForProxyConnectionIssues = false
-            mtProto.canResetAuthData = resetAllAuthKeys
+            // Auth keys are cleared once above; leaving canResetAuthData=true would
+            // re-trigger handshake on every transport connect and block encrypted RPC.
+            mtProto.canResetAuthData = false
             
             let connectionStatus = Promise<ConnectionStatus>(.waitingForNetwork)
             
