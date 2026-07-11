@@ -563,7 +563,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                         context.updateAuthInfoForDatacenter(withId: id, authInfo: nil, selector: .persistent)
                     }
                 }
-                context.invalidateTransportSchemesForDatacenterIds(datacenterIds.map { NSNumber(value: $0) })
+                context.invalidateTransportSchemes(forDatacenterIds: datacenterIds.map { NSNumber(value: $0) })
                 context.removeAllAuthTokens()
             }
             
