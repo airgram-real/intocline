@@ -195,18 +195,16 @@ public class UnauthorizedAccount {
         })
         
         network.context.performBatchUpdates({
-            var datacenterIds: [Int] = [1, 2]
+            // Single-DC fork: only DC1 points at our server (see Network.swift).
+            var datacenterIds: [Int] = [1]
             if testingEnvironment {
                 datacenterIds = [3]
-            } else {
-                datacenterIds.append(contentsOf: [4])
             }
             for id in datacenterIds {
                 if network.context.authInfoForDatacenter(withId: id, selector: .persistent) == nil {
                     network.context.authInfoForDatacenter(withIdRequired: id, isCdn: false, selector: .ephemeralMain, allowUnboundEphemeralKeys: false)
                 }
             }
-            network.context.beginExplicitBackupAddressDiscovery()
         })
         
         self.stateManager.reset()
