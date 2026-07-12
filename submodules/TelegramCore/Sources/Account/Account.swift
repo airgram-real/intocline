@@ -328,11 +328,11 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                             return .unauthorized(UnauthorizedAccount(accountManager: accountManager, networkArguments: networkArguments, id: id, rootPath: rootPath, basePath: path, testingEnvironment: unauthorizedState.isTestingEnvironment, postbox: postbox, network: network, shouldKeepAutoConnection: shouldKeepAutoConnection))
                                         }
                                 case let authorizedState as AuthorizedAccountState:
-                                    return postbox.transaction { transaction -> String? in
-                                        return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
-                                    }
-                                    |> mapToSignal { phoneNumber in
-                                        return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
+                            return postbox.transaction { transaction -> String? in
+                                return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
+                            }
+                            |> mapToSignal { phoneNumber in
+                                return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, phoneNumber: phoneNumber, preserveAuthKeysOnReload: true, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
                                         |> map { network -> AccountResult in
                                             return .authorized(Account(accountManager: accountManager, id: id, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, postbox: postbox, network: network, networkArguments: networkArguments, peerId: authorizedState.peerId, auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser))
                                         }
@@ -1778,6 +1778,7 @@ public func standaloneStateManager(
                                     proxySettings: proxySettings,
                                     networkSettings: networkSettings,
                                     phoneNumber: phoneNumber,
+                                    preserveAuthKeysOnReload: true,
                                     useRequestTimeoutTimers: false,
                                     appConfiguration: .defaultValue
                                 )

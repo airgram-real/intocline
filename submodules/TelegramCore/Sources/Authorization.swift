@@ -377,6 +377,7 @@ public func sendAuthorizationCode(accountManager: AccountManager<TelegramAccount
                                 isSupportUser = true
                             }
                             let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
+                            transaction.updatePeersInternal([user], update: { _, updated in updated })
                             initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
                             transaction.setState(state)
                             if let otherwiseReloginDays = otherwiseReloginDays, let value = forcedPasswordSetupNotice(otherwiseReloginDays) {
@@ -1168,9 +1169,7 @@ public func authorizeWithPassword(accountManager: AccountManager<TelegramAccount
 
                 let user = TelegramUser(user: apiUser)
                 let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
-                /*transaction.updatePeersInternal([user], update: { current, peer -> Peer? in
-                 return peer
-                 })*/
+                transaction.updatePeersInternal([user], update: { _, updated in updated })
                 var isSupportUser = false
                 if let phone = user.phone, phone.hasPrefix("42") {
                     isSupportUser = true
@@ -1301,6 +1300,7 @@ public func authorizeWithPasskey(accountManager: AccountManager<TelegramAccountM
                         isSupportUser = true
                     }
                     let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
+                    transaction.updatePeersInternal([user], update: { _, updated in updated })
                     initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
                     transaction.setState(state)
                     if let otherwiseReloginDays = otherwiseReloginDays, let value = forcedPasswordSetupNotice(otherwiseReloginDays) {
@@ -1539,6 +1539,7 @@ public func signUpWithName(accountManager: AccountManager<TelegramAccountManager
                         if let hole = account.postbox.seedConfiguration.initializeChatListWithHole.topLevel {
                             transaction.replaceChatListHole(groupId: .root, index: hole.index, hole: nil)
                         }
+                        transaction.updatePeersInternal([user], update: { _, updated in updated })
                         initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
                         transaction.setState(state)
                         if let otherwiseReloginDays = otherwiseReloginDays, let value = forcedPasswordSetupNotice(otherwiseReloginDays) {
