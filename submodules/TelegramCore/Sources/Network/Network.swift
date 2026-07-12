@@ -475,7 +475,7 @@ private func myTelegramDatacenterIds(testingEnvironment: Bool) -> [Int] {
     return [1]
 }
 
-func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, preserveAuthKeysOnReload: Bool = false, useRequestTimeoutTimers: Bool, appConfiguration: AppConfiguration) -> Signal<Network, NoError> {
+func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, useRequestTimeoutTimers: Bool, appConfiguration: AppConfiguration) -> Signal<Network, NoError> {
     return Signal { subscriber in
         let queue = Queue()
         queue.async {
@@ -549,7 +549,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             context.keychain = keychain
             
             let addressSet = MTDatacenterAddressSet(addressList: [serverAddress])!
-            let resetAllAuthKeys = !preserveAuthKeysOnReload && phoneNumber == nil
+            let resetAllAuthKeys = phoneNumber == nil
             context.performBatchUpdates {
                 for id in datacenterIds {
                     context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: addressSet)
