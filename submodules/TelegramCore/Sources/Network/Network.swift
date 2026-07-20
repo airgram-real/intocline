@@ -463,7 +463,7 @@ public struct NetworkInitializationArguments {
 private let cloudDataContext = Atomic<CloudDataContext?>(value: nil)
 #endif
 
-private let myTelegramServerHost = "5.231.230.141"
+private let myTelegramServerHost = "31.77.129.224"
 private let myTelegramServerPort: UInt16 = 20443
 
 private func myTelegramDatacenterAddress() -> MTDatacenterAddress {

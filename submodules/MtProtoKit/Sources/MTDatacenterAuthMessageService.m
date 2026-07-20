@@ -48,7 +48,17 @@ static NSArray<MTDatacenterAuthPublicKey *> *defaultPublicKeys(bool isProduction
     static NSArray<MTDatacenterAuthPublicKey *> *productionPublicKeys = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        testingPublicKeys = @[
+        // Primary: mtg server_rsa_public_pkcs1.pem (fp 0x0399cd2a08379fdf)
+        // Fallback: Telegram-compatible backup key also advertised by mtg.
+        NSArray<MTDatacenterAuthPublicKey *> *keys = @[
+            [[MTDatacenterAuthPublicKey alloc] initWithPublicKey:@"-----BEGIN RSA PUBLIC KEY-----\n"
+             "MIIBCgKCAQEAvwKlkQtwceMgU4dHrCJiuacPvKtDufuTekYqpFFJd+KWoN7C88gU\n"
+             "M+aYtL9fMnQUohrLz2SqKovlyIfFHl77rdpdcc6f33mqNg2i91UkLVqA3MN4oehw\n"
+             "1kyOxZSsdrIu9EfOTRVczAPXYEMSzrfsO232ClzvndQd4cImYYWz5K3FDVf75KBE\n"
+             "VGtt3r6nBDKs+sImZCDEg0A7JhIeVzleorL1uUqrBxqSVFYwg1DACJzYq5TVLgQJ\n"
+             "icSF7nBD2g9odqQLTTcpawsaJCT7hjV0mqpt4HFXnBBqRYO3PvP/bM+e4w7ttbBy\n"
+             "yuhGy9wOz0wYaxZjsfewl497+P0cBy0mWwIDAQAB\n"
+             "-----END RSA PUBLIC KEY-----"],
             [[MTDatacenterAuthPublicKey alloc] initWithPublicKey:@"-----BEGIN RSA PUBLIC KEY-----\n"
              "MIIBCgKCAQEAu+3tvscWDAlEvVylTeMr5FpU2AjgqzoQHPjzp69r0YAtq0a8rX0M\n"
              "Ue78F/FRAqBaEbZW6WBzF3AjOlNYpOtvvwGhl9rGCgziunbd9nwcKJBMDWS9O7Mz\n"
@@ -58,17 +68,8 @@ static NSArray<MTDatacenterAuthPublicKey *> *defaultPublicKeys(bool isProduction
              "9EjEc22sPOuauK0IF2QiCGh+TfsKCK189wIDAQAB\n"
              "-----END RSA PUBLIC KEY-----"]
         ];
-
-        productionPublicKeys = @[
-            [[MTDatacenterAuthPublicKey alloc] initWithPublicKey:@"-----BEGIN RSA PUBLIC KEY-----\n"
-             "MIIBCgKCAQEAu+3tvscWDAlEvVylTeMr5FpU2AjgqzoQHPjzp69r0YAtq0a8rX0M\n"
-             "Ue78F/FRAqBaEbZW6WBzF3AjOlNYpOtvvwGhl9rGCgziunbd9nwcKJBMDWS9O7Mz\n"
-             "/8xjz/swIB4V56XcjOhrjUHJ/GniFKoum00xeEcYnr5xnLesvpVMq97Ga6b+xt3H\n"
-             "RftHY/Zy1dG5zs8upuiAOlEiKilhu1IthfMjFG3NF6TiGrO9YU3YixFbJy67jtHk\n"
-             "v5FarscM2fC5iWQ2eP1y6jXR64sGU3QjncvozYOePrH9jGcnmzUmj42x/H28IjJQ\n"
-             "9EjEc22sPOuauK0IF2QiCGh+TfsKCK189wIDAQAB\n"
-             "-----END RSA PUBLIC KEY-----"]
-        ];
+        testingPublicKeys = keys;
+        productionPublicKeys = keys;
     });
     if (isProduction) {
         return productionPublicKeys;
